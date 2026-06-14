@@ -143,7 +143,31 @@ def curate_fallback(cands):
                         {"name":"美 증시","val":"—","note":"전일"},{"name":"美 금리","val":"—","note":"국채"},{"name":"WTI","val":"—","note":"유가"}],
             "headlines":[itm(c,impl=True) for c in heads],"global":glob,"sections":secs}
 
-def kdate():
+def publish_pages(html_doc):
+    """Save today's newspaper as index.html and push to GitHub Pages."""
+    import subprocess, os
+    token = os.environ.get("GITHUB_TOKEN","")
+    repo  = os.environ.get("GITHUB_REPOSITORY","")
+    if not token or not repo:
+        print("GITHUB_TOKEN/REPOSITORY not set, skipping Pages publish")
+        return
+    actor = os.environ.get("GITHUB_ACTOR","github-actions")
+    remote = f"https://{actor}:{token}@github.com/{repo}.git"
+    cmds = [
+        ["git","config","user.email","actions@github.com"],
+        ["git","config","user.name","GitHub Actions"],
+        ["git","remote","set-url","origin", remote],
+    ]
+    for c in cmds: subprocess.run(c, check=True)
+    open("index.html","w").write(html_doc)
+    subprocess.run(["git","add","index.html"], check=True)
+    result = subprocess.run(["git","diff","--cached","--quiet"])
+    if result.returncode != 0:
+        subprocess.run(["git","commit","-m",f"신문 자동 발행"], check=True)
+        subprocess.run(["git","push","origin","main"], check=True)
+        print("Pages published: index.html pushed")
+    else:
+        print("No changes to publish")
     now=datetime.now(KST) if KST else datetime.utcnow()
     wd=["월","화","수","목","금","토","일"][now.weekday()]
     return now, f"{now.year}년 {now.month}월 {now.day}일 {wd}요일"
@@ -171,6 +195,7 @@ def main():
     if os.environ.get("DRY_RUN")=="1":
         open("preview.html","w").write(doc); print("DRY_RUN: wrote preview.html"); return
     send(doc, datestr)
+    publish_pages(doc)
 
 if __name__=="__main__":
     main()
