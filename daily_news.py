@@ -70,7 +70,6 @@ def collect():
         seen.add(k); ded.append(r)
     return ded
 
-# ---------------- AI curation ----------------
 SECTION_ORDER=[("경제","ECONOMY"),("증권","MARKETS"),("테크","TECH"),("산업","INDUSTRY"),("경영","MANAGEMENT")]
 
 def curate_api(cands):
@@ -85,7 +84,7 @@ def curate_api(cands):
 규칙:
 - 같은 사안이 여러 매체에 보이면 그날의 핵심이다. 중복은 하나로.
 - 금리·환율·실적·M&A·규제·자금조달 등 의사결정에 직결되는 뉴스를 우선.
-- '글로벌 마켓' 6건은 반드시 CNBC 또는 AP 후보(인덱스 {gl_idx[:1]}... 등 src=CNBC/AP)에서만 고른다.
+- 글로벌 마켓 6건은 반드시 CNBC 또는 AP 후보(src=CNBC/AP)에서만 고른다.
 - 5개 섹션(경제/증권/테크/산업/경영)은 각 6건. 국내 매체 중심이되 적절하면 해외 포함.
 - summary는 한국어 1문장(자작, 원문 복제 금지). implication(헤드라인 3건만)은 투자/경영 관점 1문장.
 - dek은 오늘 흐름을 요약한 한국어 1문장. snapshot은 헤드라인에서 추론한 5개 지표(name/val/note 짧게).
@@ -110,7 +109,7 @@ def curate_api(cands):
     data={"dek":j["dek"],"snapshot":j["snapshot"][:5],
           "headlines":[mk(h["i"],h["summary"],h.get("implication","")) for h in j["headlines"][:3]],
           "global":[mk(g["i"],g["summary"]) for g in j["global"][:6]],
-          "sections":[{"ko":s["ko"],"en":s["en"],"items":[mk(x["i"],x["summary"]) for x in s["items"][:4]]} for s in j["sections"][:5]]}
+          "sections":[{"ko":s["ko"],"en":s["en"],"items":[mk(x["i"],x["summary"]) for x in s["items"][:6]]} for s in j["sections"][:5]]}
     return data
 
 def curate_fallback(cands):
@@ -143,39 +142,38 @@ def curate_fallback(cands):
                         {"name":"美 증시","val":"—","note":"전일"},{"name":"美 금리","val":"—","note":"국채"},{"name":"WTI","val":"—","note":"유가"}],
             "headlines":[itm(c,impl=True) for c in heads],"global":glob,"sections":secs}
 
+def get_datestr():
+    now=datetime.now(KST) if KST else datetime.utcnow()
+    wd=["월","화","수","목","금","토","일"][now.weekday()]
+    return f"{now.year}년 {now.month}월 {now.day}일 {wd}요일"
+
 def publish_pages(html_doc):
     """Save today's newspaper as index.html and push to GitHub Pages."""
-    import subprocess, os
-    token = os.environ.get("GITHUB_TOKEN","")
-    repo  = os.environ.get("GITHUB_REPOSITORY","")
+    import subprocess
+    token=os.environ.get("GITHUB_TOKEN","")
+    repo=os.environ.get("GITHUB_REPOSITORY","")
     if not token or not repo:
         print("GITHUB_TOKEN/REPOSITORY not set, skipping Pages publish")
         return
-    actor = os.environ.get("GITHUB_ACTOR","github-actions")
-    remote = f"https://{actor}:{token}@github.com/{repo}.git"
-    cmds = [
-        ["git","config","user.email","actions@github.com"],
-        ["git","config","user.name","GitHub Actions"],
-        ["git","remote","set-url","origin", remote],
-    ]
-    for c in cmds: subprocess.run(c, check=True)
+    actor=os.environ.get("GITHUB_ACTOR","github-actions")
+    remote=f"https://{actor}:{token}@github.com/{repo}.git"
+    for c in [["git","config","user.email","actions@github.com"],
+               ["git","config","user.name","GitHub Actions"],
+               ["git","remote","set-url","origin",remote]]:
+        subprocess.run(c, check=True)
     open("index.html","w").write(html_doc)
     subprocess.run(["git","add","index.html"], check=True)
-    result = subprocess.run(["git","diff","--cached","--quiet"])
+    result=subprocess.run(["git","diff","--cached","--quiet"])
     if result.returncode != 0:
-        subprocess.run(["git","commit","-m",f"신문 자동 발행"], check=True)
+        subprocess.run(["git","commit","-m","신문 자동 발행"], check=True)
         subprocess.run(["git","push","origin","main"], check=True)
         print("Pages published: index.html pushed")
     else:
         print("No changes to publish")
-    now=datetime.now(KST) if KST else datetime.utcnow()
-    wd=["월","화","수","목","금","토","일"][now.weekday()]
-    return now, f"{now.year}년 {now.month}월 {now.day}일 {wd}요일"
 
 def send(html_doc, datestr):
     user=os.environ["GMAIL_USER"]; pw=os.environ["GMAIL_APP_PASSWORD"]
     to=os.environ.get("RECIPIENT","drcap10@gmail.com")
-    wd=datestr.split()[-1]
     msg=MIMEText(html_doc,"html","utf-8")
     msg["Subject"]=f"My Agent Times | {datestr} 조간"
     msg["From"]=formataddr(("My Agent Times",user)); msg["To"]=to
@@ -190,10 +188,8 @@ def main():
         data=curate_api(cands) if os.environ.get("ANTHROPIC_API_KEY") else curate_fallback(cands)
     except Exception as e:
         print("curate_api failed -> fallback:",repr(e)[:120]); data=curate_fallback(cands)
-    now=datetime.now(KST) if KST else datetime.utcnow()
-wd=["월","화","수","목","금","토","일"][now.weekday()]
-datestr=f"{now.year}년 {now.month}월 {now.day}일 {wd}요일"
-data["date"]=datestr
+    datestr=get_datestr()
+    data["date"]=datestr
     doc=render_html(data, sample=False)
     if os.environ.get("DRY_RUN")=="1":
         open("preview.html","w").write(doc); print("DRY_RUN: wrote preview.html"); return
