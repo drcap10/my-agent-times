@@ -190,7 +190,10 @@ def main():
         data=curate_api(cands) if os.environ.get("ANTHROPIC_API_KEY") else curate_fallback(cands)
     except Exception as e:
         print("curate_api failed -> fallback:",repr(e)[:120]); data=curate_fallback(cands)
-    now,datestr=kdate(); data["date"]=datestr
+    now=datetime.now(KST) if KST else datetime.utcnow()
+wd=["월","화","수","목","금","토","일"][now.weekday()]
+datestr=f"{now.year}년 {now.month}월 {now.day}일 {wd}요일"
+data["date"]=datestr
     doc=render_html(data, sample=False)
     if os.environ.get("DRY_RUN")=="1":
         open("preview.html","w").write(doc); print("DRY_RUN: wrote preview.html"); return
